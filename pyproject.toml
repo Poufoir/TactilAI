@@ -1,0 +1,31 @@
+[tool.poetry]
+name = "tactilai"
+version = "0.1.0"
+description = "A modular RL framework for forging competitive agents in turn-based strategy games"
+authors = ["poufoir <clement.lemeunier44@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+pettingzoo = "^1.25.0"
+numpy = "^2.4.3"
+scipy = "^1.17.1"
+gymnasium = "^1.2.3"
+pygame = "^2.6.1"
+tensorboard = "^2.20.0"
+wandb = "^0.25.1"
+tqdm = "^4.67.3"
+pyyaml = "^6.0.3"
+rich = "^14.3.3"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.0.2"
+pytest-cov = "^7.0.0"
+ruff = "^0.15.6"
+mypy = "^1.19.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
