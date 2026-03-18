@@ -1,4 +1,4 @@
-# ForgeRL
+# TactilAI
 
 > A modular reinforcement learning framework for forging competitive agents in turn-based strategy games.
 
@@ -16,7 +16,7 @@ Two independent PPO agents compete in a Fire Emblem-inspired grid environment, t
 
 ```bash
 # 1. Clone
-git clone git@github.com:TON_USERNAME/ForgeRL.git && cd ForgeRL
+git clone git@github.com:Poufoir/TactilAI.git && cd TactilAI
 
 # 2. Environnement Conda (inclut PyTorch ROCm)
 conda env create -f environment.yml
