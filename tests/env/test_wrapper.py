@@ -159,7 +159,6 @@ class TestStep:
 
 class TestGymnasiumCompliance:
     def test_check_env(self) -> None:
-        """Official Gymnasium environment checker."""
         env = TactilAIEnv(team=Team.BLUE, seed=42)
-        check_env(env, warn=True)
+        check_env(env)
         env.close()
