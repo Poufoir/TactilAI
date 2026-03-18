@@ -30,3 +30,10 @@ mypy = "^1.19.1"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts   = "-v --cov=tactilai --cov-report=term-missing"
+filterwarnings = [
+    "ignore::UserWarning:gymnasium.utils.env_checker",
+]
