@@ -5,6 +5,7 @@ description = "A modular RL framework for forging competitive agents in turn-bas
 authors = ["poufoir <clement.lemeunier44@gmail.com>"]
 license = "MIT"
 readme = "README.md"
+packages = [{ include = "tactilai" }]
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.13"
