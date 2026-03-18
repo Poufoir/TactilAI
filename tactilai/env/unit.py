@@ -301,21 +301,23 @@ class Unit:
     def to_obs_vector(self) -> list[float]:
         """
         Compact float representation for the RL observation space.
-        Length: 10 features per unit.
-        [class_id, team_id, row, col, hp_ratio, has_moved, has_acted,
-         movement, min_range, max_range]
+        All values normalised to [0, 1].
+        10 features: [class_id, team_id, row, col, hp_ratio,
+                    has_moved, has_acted, movement, min_range, max_range]
         """
+        from tactilai.env.grid import GRID_SIZE, MAX_MOVEMENT, MAX_RANGE
+
         return [
-            float(self.unit_class),
+            float(self.unit_class) / (len(UnitClass) - 1),
             float(self.team),
-            float(self.pos[0]),
-            float(self.pos[1]),
+            float(self.pos[0]) / (GRID_SIZE - 1),
+            float(self.pos[1]) / (GRID_SIZE - 1),
             self.hp_ratio,
             float(self.has_moved),
             float(self.has_acted),
-            float(self.movement),
-            float(self.weapon.min_range),
-            float(self.weapon.max_range),
+            float(self.movement) / MAX_MOVEMENT,
+            float(self.weapon.min_range) / MAX_RANGE,
+            float(self.weapon.max_range) / MAX_RANGE,
         ]
 
     def __repr__(self) -> str:
