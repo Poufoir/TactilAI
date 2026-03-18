@@ -246,7 +246,7 @@ class TactilAIEnv(gym.Env):
           - move_idx is 0 (stay) OR the tile is reachable
           - act_idx is 0 (skip) OR the target is valid and in range
         """
-        mask = np.zeros(ACTION_SIZE, dtype=bool)
+        mask = np.zeros(ACTION_SIZE, dtype=np.int8)
         grid = self._grid
         team_units = sorted(grid.alive_units(grid.active_team), key=lambda u: u.uid)
 
