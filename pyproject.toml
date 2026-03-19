@@ -14,11 +14,11 @@ numpy = "^2.4.3"
 scipy = "^1.17.1"
 gymnasium = "^1.2.3"
 pygame = "^2.6.1"
-tensorboard = "^2.20.0"
 wandb = "^0.25.1"
 tqdm = "^4.67.3"
 pyyaml = "^6.0.3"
 rich = "^14.3.3"
+setuptools = "^82.0.1"
 
 
 [tool.poetry.group.dev.dependencies]

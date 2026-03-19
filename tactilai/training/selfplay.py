@@ -15,7 +15,7 @@ Training loop (per iteration)
   4. Evaluate: run EVAL_EPISODES full episodes, record win rates
   5. Update ELO ratings
   6. Save checkpoints to pool every SAVE_EVERY updates
-  7. Log all metrics to TensorBoard
+  7. Log all metrics to WandB
 
 Episode structure
 ─────────────────
@@ -23,14 +23,13 @@ Episode structure
   - Agent BLUE acts on BLUE turns, agent RED acts on RED turns
   - Both agents collect transitions simultaneously into their own buffers
   - When a buffer is full, that agent performs a PPO update immediately
-    (the other agent's buffer may not be full yet — that's fine)
 
 Self-play stability measures
 ────────────────────────────
   - Pool sampling prevents cycling
   - Opponent weights are frozen during collection (no_grad)
   - ELO tracks relative progress of both agents
-  - Win rate window of last EVAL_EPISODES episodes
+  - Win rate window of last 100 episodes
 """
 
 from __future__ import annotations
@@ -39,7 +38,7 @@ import time
 
 import numpy as np
 import torch
-from torch.utils.tensorboard import SummaryWriter
+import wandb
 
 from tactilai.agents.ppo import ROLLOUT_STEPS, PPOAgent
 from tactilai.env.gym_wrapper import TactilAIEnv
@@ -49,11 +48,11 @@ from tactilai.training.pool import SAVE_EVERY, CheckpointPool
 
 # ── Hyperparameters ───────────────────────────────────────────────────────────
 
-TOTAL_UPDATES = 2000  # total PPO updates per agent
-EVAL_EPISODES = 20  # episodes per evaluation
-EVAL_EVERY = 50  # evaluate every N updates
-LOG_DIR = "runs/selfplay"
+TOTAL_UPDATES = 2000
+EVAL_EPISODES = 20
+EVAL_EVERY = 50
 CHECKPOINT_DIR = "checkpoints"
+WANDB_PROJECT = "tactilai"
 
 
 # ── Self-play trainer ─────────────────────────────────────────────────────────
@@ -65,11 +64,11 @@ class SelfPlayTrainer:
 
     Parameters
     ----------
-    device      : torch.device
-    total_updates : int    total PPO updates to run
-    seed        : int | None
-    log_dir     : str      TensorBoard log directory
-    checkpoint_dir : str   directory for checkpoints and pool
+    device         : torch.device
+    total_updates  : int
+    seed           : int | None
+    checkpoint_dir : str
+    wandb_run_name : str | None   custom run name on WandB
     """
 
     def __init__(
@@ -77,8 +76,8 @@ class SelfPlayTrainer:
         device: torch.device,
         total_updates: int = TOTAL_UPDATES,
         seed: int | None = None,
-        log_dir: str = LOG_DIR,
         checkpoint_dir: str = CHECKPOINT_DIR,
+        wandb_run_name: str | None = None,
     ) -> None:
         self.device = device
         self.total_updates = total_updates
@@ -87,8 +86,6 @@ class SelfPlayTrainer:
         # ── Agents ────────────────────────────────────────────────────────────
         self.agent_blue = PPOAgent(device=device)
         self.agent_red = PPOAgent(device=device)
-
-        # Frozen opponent agents (weights updated from pool, never trained)
         self.opp_blue = PPOAgent(device=device)
         self.opp_red = PPOAgent(device=device)
 
@@ -102,72 +99,81 @@ class SelfPlayTrainer:
         self.elo.register("agent_blue")
         self.elo.register("agent_red")
 
-        # ── Logging ───────────────────────────────────────────────────────────
-        self.writer = SummaryWriter(log_dir=log_dir)
+        # ── WandB ─────────────────────────────────────────────────────────────
+        wandb.init(
+            project=WANDB_PROJECT,
+            name=wandb_run_name,
+            config={
+                "total_updates": total_updates,
+                "rollout_steps": ROLLOUT_STEPS,
+                "eval_episodes": EVAL_EPISODES,
+                "seed": seed,
+                "device": str(device),
+            },
+        )
+
+        # ── State ─────────────────────────────────────────────────────────────
         self.update = 0
         self.episode = 0
-
-        # Running stats
         self._win_buffer: dict[str, list[float]] = {"blue": [], "red": [], "draw": []}
 
     # ── Main training loop ────────────────────────────────────────────────────
 
     def train(self) -> None:
-        """Runs the full self-play training loop."""
         print(f"Starting self-play training on {self.device}")
         print(f"Total updates : {self.total_updates}")
-        print(f"Rollout steps : {ROLLOUT_STEPS} per agent\n")
+        print(f"WandB project : {WANDB_PROJECT}\n")
 
         obs, info = self.env.reset(seed=self.seed)
         t_start = time.time()
 
-        # Save initial checkpoints to pool so sampling works from step 0
+        # Save initial checkpoints so pool sampling works from step 0
         self.pool_blue.save_checkpoint(self.agent_blue, update_step=0)
         self.pool_red.save_checkpoint(self.agent_red, update_step=0)
-
-        # Load initial opponents
         self.pool_blue.load_random(self.opp_blue)
         self.pool_red.load_random(self.opp_red)
 
         while self.update < self.total_updates:
             obs, info = self._collect_rollout(obs, info)
 
-            # ── Update whichever agent has a full buffer ───────────────────
             for agent, opp_pool, name in (
                 (self.agent_blue, self.pool_red, "blue"),
                 (self.agent_red, self.pool_blue, "red"),
             ):
-                if agent.buffer.is_full:
-                    metrics = agent.update(obs)
-                    self.update += 1
-                    self._log_metrics(metrics, name, self.update)
+                if not agent.buffer.is_full:
+                    continue
 
-                    # Refresh opponent from pool
+                metrics = agent.update(obs)
+                self.update += 1
+                self._log_metrics(metrics, name, self.update)
+
+                # Refresh opponent
+                if name == "blue":
+                    self.pool_red.load_random(self.opp_red)
+                else:
+                    self.pool_blue.load_random(self.opp_blue)
+
+                # Save checkpoint to pool
+                if self.update % SAVE_EVERY == 0:
                     if name == "blue":
-                        self.pool_red.load_random(self.opp_red)
+                        self.pool_blue.save_checkpoint(self.agent_blue, self.update)
                     else:
-                        self.pool_blue.load_random(self.opp_blue)
+                        self.pool_red.save_checkpoint(self.agent_red, self.update)
 
-                    # Save checkpoint to pool
-                    if self.update % SAVE_EVERY == 0:
-                        if name == "blue":
-                            self.pool_blue.save_checkpoint(self.agent_blue, self.update)
-                        else:
-                            self.pool_red.save_checkpoint(self.agent_red, self.update)
+                # Evaluation
+                if self.update % EVAL_EVERY == 0:
+                    win_rates = self._evaluate()
+                    self._log_elo()
+                    elapsed = time.time() - t_start
+                    print(
+                        f"Update {self.update:5d}/{self.total_updates} | "
+                        f"ELO blue={self.elo.rating('agent_blue'):.0f} "
+                        f"red={self.elo.rating('agent_red'):.0f} | "
+                        f"win_blue={win_rates['blue']:.0%} | "
+                        f"elapsed={elapsed:.0f}s"
+                    )
 
-                    # Evaluation
-                    if self.update % EVAL_EVERY == 0:
-                        self._evaluate()
-                        self._log_elo()
-                        elapsed = time.time() - t_start
-                        print(
-                            f"Update {self.update:5d}/{self.total_updates} | "
-                            f"ELO blue={self.elo.rating('agent_blue'):.0f} "
-                            f"red={self.elo.rating('agent_red'):.0f} | "
-                            f"elapsed={elapsed:.0f}s"
-                        )
-
-        self.writer.close()
+        wandb.finish()
         print("\nTraining complete.")
 
     # ── Rollout collection ────────────────────────────────────────────────────
@@ -177,23 +183,10 @@ class SelfPlayTrainer:
         obs: np.ndarray,
         info: dict,
     ) -> tuple[np.ndarray, dict]:
-        """
-        Collects one step in the environment and stores the transition
-        in the appropriate agent's buffer.
-
-        The active team determines which agent acts:
-          - BLUE turn → agent_blue acts, opp_red is frozen
-          - RED turn  → agent_red acts, opp_blue is frozen
-
-        Returns updated obs and info.
-        """
         active_team = self.env._grid.active_team
         mask = info["action_mask"]
 
-        if active_team == Team.BLUE:
-            acting_agent = self.agent_blue
-        else:
-            acting_agent = self.agent_red
+        acting_agent = self.agent_blue if active_team == Team.BLUE else self.agent_red
 
         action, log_prob, value = acting_agent.select_action(obs, mask)
         obs_next, reward, terminated, truncated, info_next = self.env.step(action)
@@ -211,8 +204,7 @@ class SelfPlayTrainer:
 
         if terminated or truncated:
             self.episode += 1
-            winner = info_next.get("winner")
-            self._record_episode_result(winner)
+            self._record_episode_result(info_next.get("winner"))
             obs_next, info_next = self.env.reset()
 
         return obs_next, info_next
@@ -220,10 +212,6 @@ class SelfPlayTrainer:
     # ── Evaluation ───────────────────────────────────────────────────────────
 
     def _evaluate(self) -> dict[str, float]:
-        """
-        Runs EVAL_EPISODES full episodes between agent_blue and agent_red.
-        Records win rates and updates ELO.
-        """
         results = {"blue": 0, "red": 0, "draw": 0}
         eval_env = TactilAIEnv(team=Team.BLUE, seed=self.seed)
 
@@ -242,32 +230,35 @@ class SelfPlayTrainer:
             winner = info.get("winner")
             if winner == "BLUE":
                 results["blue"] += 1
-                self.elo.update("agent_blue", "agent_red", winner="agent_blue")
+                self.elo.update("agent_blue", "agent_red", "agent_blue")
             elif winner == "RED":
                 results["red"] += 1
-                self.elo.update("agent_blue", "agent_red", winner="agent_red")
+                self.elo.update("agent_blue", "agent_red", "agent_red")
             else:
                 results["draw"] += 1
-                self.elo.update("agent_blue", "agent_red", winner=None)
+                self.elo.update("agent_blue", "agent_red", None)
 
         eval_env.close()
 
-        # Log win rates
         total = EVAL_EPISODES
         win_rates = {k: v / total for k, v in results.items()}
-        self.writer.add_scalar("eval/win_rate_blue", win_rates["blue"], self.update)
-        self.writer.add_scalar("eval/win_rate_red", win_rates["red"], self.update)
-        self.writer.add_scalar("eval/draw_rate", win_rates["draw"], self.update)
+        wandb.log(
+            {
+                "eval/win_rate_blue": win_rates["blue"],
+                "eval/win_rate_red": win_rates["red"],
+                "eval/draw_rate": win_rates["draw"],
+            },
+            step=self.update,
+        )
+
         return win_rates
 
     # ── Logging helpers ───────────────────────────────────────────────────────
 
     def _record_episode_result(self, winner: str | None) -> None:
-        """Records episode outcome to running win buffer."""
         self._win_buffer["blue"].append(1.0 if winner == "BLUE" else 0.0)
         self._win_buffer["red"].append(1.0 if winner == "RED" else 0.0)
         self._win_buffer["draw"].append(1.0 if winner is None else 0.0)
-        # Keep last 100 episodes
         for k in self._win_buffer:
             if len(self._win_buffer[k]) > 100:
                 self._win_buffer[k].pop(0)
@@ -275,17 +266,20 @@ class SelfPlayTrainer:
     def _log_metrics(
         self, metrics: dict[str, float], agent_name: str, step: int
     ) -> None:
-        for key, value in metrics.items():
-            self.writer.add_scalar(f"{agent_name}/{key}", value, step)
+        log_data = {f"{agent_name}/{k}": v for k, v in metrics.items()}
 
-        # Rolling win rate
-        if self._win_buffer["blue"]:
-            self.writer.add_scalar(
-                f"{agent_name}/win_rate_rolling",
-                float(np.mean(self._win_buffer[agent_name])),
-                step,
+        if self._win_buffer[agent_name]:
+            log_data[f"{agent_name}/win_rate_rolling"] = float(
+                np.mean(self._win_buffer[agent_name])
             )
 
+        wandb.log(log_data, step=step)
+
     def _log_elo(self) -> None:
-        self.writer.add_scalar("elo/blue", self.elo.rating("agent_blue"), self.update)
-        self.writer.add_scalar("elo/red", self.elo.rating("agent_red"), self.update)
+        wandb.log(
+            {
+                "elo/blue": self.elo.rating("agent_blue"),
+                "elo/red": self.elo.rating("agent_red"),
+            },
+            step=self.update,
+        )
