@@ -35,7 +35,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.pytest.ini_options]
 testpaths      = ["tests"]
 addopts        = "-v --cov=tactilai --cov-report=term-missing"
-env_files      = [".env"]
+env_files      = ".env"
 filterwarnings = [
     "ignore::UserWarning:gymnasium.utils.env_checker",
 ]
