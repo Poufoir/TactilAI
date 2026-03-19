@@ -26,14 +26,16 @@ pytest = "^9.0.2"
 pytest-cov = "^7.0.0"
 ruff = "^0.15.6"
 mypy = "^1.19.1"
+pytest-dotenv = "^0.5.2"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts   = "-v --cov=tactilai --cov-report=term-missing"
+testpaths      = ["tests"]
+addopts        = "-v --cov=tactilai --cov-report=term-missing"
+env_files      = [".env"]
 filterwarnings = [
     "ignore::UserWarning:gymnasium.utils.env_checker",
 ]
