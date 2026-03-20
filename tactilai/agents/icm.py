@@ -60,7 +60,7 @@ from tactilai.env.gym_wrapper import ACTION_SIZE
 
 LATENT_DIM = 256  # dimension of the encoded state φ(s)
 ICM_BETA = 0.2  # weight of forward loss vs inverse loss
-ICM_ETA = 0.01  # intrinsic reward scaling factor
+ICM_ETA = 0.001  # intrinsic reward scaling factor
 
 
 # ── State encoder (φ) ─────────────────────────────────────────────────────────

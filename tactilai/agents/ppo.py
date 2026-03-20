@@ -62,7 +62,7 @@ CLIP_EPS = 0.2  # PPO clip epsilon
 VF_COEF = 0.5  # value loss weight
 ENT_COEF = 0.01  # entropy bonus weight
 MAX_GRAD_NORM = 0.5  # gradient clipping
-LR_POLICY = 3e-4  # ActorCritic learning rate
+LR_POLICY = 1e-4  # ActorCritic learning rate
 LR_ICM = 1e-3  # ICM learning rate
 
 
@@ -326,6 +326,9 @@ class PPOAgent:
             data["obs"], data["obs_next"], data["actions"]
         ).cpu()
         total_rewards = data["rewards"] + r_intrinsic
+        total_rewards = (total_rewards - total_rewards.mean()) / (
+            total_rewards.std() + 1e-8
+        )
 
         # ── 2. Bootstrap last value ───────────────────────────────────────────
         with torch.no_grad():

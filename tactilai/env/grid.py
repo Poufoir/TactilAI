@@ -27,7 +27,7 @@ from tactilai.env.unit import CombatResult, DamageType, Team, Unit, UnitClass
 
 GRID_SIZE = 16
 NUM_UNITS = 6  # units per team (one per class)
-MAX_TURNS = 100  # episode ends in a draw after this many turns
+MAX_TURNS = 50  # episode ends in a draw after this many turns
 MAX_MOVEMENT = 7  # Cavalier a le plus grand mouvement
 MAX_RANGE = 3  # Archer a la plus grande portée
 
