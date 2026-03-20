@@ -310,7 +310,7 @@ class TactilAIEnv(gym.Env):
             "ready_units": [repr(u) for u in ready_units],
             "alive_blue": len(self._grid.alive_units(Team.BLUE)),
             "alive_red": len(self._grid.alive_units(Team.RED)),
-            "winner": self._grid.winner.name if self._grid.winner else None,
+            "winner": self._grid.winner.name if self._grid.winner is not None else None,
             "action_mask": self.action_mask(),
             "episode_reward": self._episode_reward,
         }
