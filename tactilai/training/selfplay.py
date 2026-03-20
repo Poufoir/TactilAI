@@ -22,31 +22,30 @@ WandB logging
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 import numpy as np
 import torch
-import wandb
 
-from tactilai.agents.ppo import PPOAgent, ROLLOUT_STEPS
+import wandb
+from tactilai.agents.ppo import ROLLOUT_STEPS, PPOAgent
 from tactilai.env.gym_wrapper import TactilAIEnv
 from tactilai.env.unit import Team
 from tactilai.training.curriculum import CurriculumScheduler
 from tactilai.training.elo import ELOTracker
 from tactilai.training.heuristic_bot import HeuristicBot
-from tactilai.training.pool import CheckpointPool, SAVE_EVERY
-
+from tactilai.training.pool import SAVE_EVERY, CheckpointPool
 
 # ── Hyperparameters ───────────────────────────────────────────────────────────
 
-TOTAL_UPDATES  = 2000
-EVAL_EPISODES  = 20
-EVAL_EVERY     = 50
+TOTAL_UPDATES = 2000
+EVAL_EPISODES = 20
+EVAL_EVERY = 50
 CHECKPOINT_DIR = "checkpoints"
-WANDB_PROJECT  = "tactilai"
+WANDB_PROJECT = "tactilai"
 
 
 # ── Self-play trainer ─────────────────────────────────────────────────────────
+
 
 class SelfPlayTrainer:
     """
@@ -64,39 +63,35 @@ class SelfPlayTrainer:
 
     def __init__(
         self,
-        device:         torch.device,
-        total_updates:  int        = TOTAL_UPDATES,
-        seed:           int | None = None,
-        checkpoint_dir: str        = CHECKPOINT_DIR,
+        device: torch.device,
+        total_updates: int = TOTAL_UPDATES,
+        seed: int | None = None,
+        checkpoint_dir: str = CHECKPOINT_DIR,
         wandb_run_name: str | None = None,
-        wandb_run_id:   str | None = None,
+        wandb_run_id: str | None = None,
     ) -> None:
-        self.device        = device
+        self.device = device
         self.total_updates = total_updates
-        self.seed          = seed
+        self.seed = seed
 
         # ── Agents ────────────────────────────────────────────────────────────
         self.agent_blue = PPOAgent(device=device)
-        self.agent_red  = PPOAgent(device=device)
+        self.agent_red = PPOAgent(device=device)
 
         # Pool opponents (frozen weights)
         self.opp_blue = PPOAgent(device=device)
-        self.opp_red  = PPOAgent(device=device)
+        self.opp_red = PPOAgent(device=device)
 
         # Heuristic bots
         self.bot_blue = HeuristicBot(team=Team.BLUE, seed=seed)
-        self.bot_red  = HeuristicBot(team=Team.RED,  seed=seed)
+        self.bot_red = HeuristicBot(team=Team.RED, seed=seed)
 
         # ── Environment ───────────────────────────────────────────────────────
         self.env = TactilAIEnv(team=Team.BLUE, seed=seed)
 
         # ── Pool, ELO, Curriculum ─────────────────────────────────────────────
-        self.pool_blue = CheckpointPool(
-            save_dir=f"{checkpoint_dir}/blue", seed=seed
-        )
-        self.pool_red = CheckpointPool(
-            save_dir=f"{checkpoint_dir}/red", seed=seed
-        )
+        self.pool_blue = CheckpointPool(save_dir=f"{checkpoint_dir}/blue", seed=seed)
+        self.pool_red = CheckpointPool(save_dir=f"{checkpoint_dir}/red", seed=seed)
         self.elo = ELOTracker()
         self.elo.register("agent_blue")
         self.elo.register("agent_red")
@@ -106,30 +101,28 @@ class SelfPlayTrainer:
 
         # Current matchup per agent ("self" or "vs_bot")
         self._matchup_blue = "vs_bot"
-        self._matchup_red  = "vs_bot"
+        self._matchup_red = "vs_bot"
 
         # ── WandB ─────────────────────────────────────────────────────────────
         wandb.init(
-            project = WANDB_PROJECT,
-            name    = wandb_run_name,
-            id      = wandb_run_id,
-            resume  = "allow" if wandb_run_id else None,
-            config  = {
-                "total_updates":  total_updates,
-                "rollout_steps":  ROLLOUT_STEPS,
-                "eval_episodes":  EVAL_EPISODES,
-                "seed":           seed,
-                "device":         str(device),
-                "curriculum":     True,
+            project=WANDB_PROJECT,
+            name=wandb_run_name,
+            id=wandb_run_id,
+            resume="allow" if wandb_run_id else None,
+            config={
+                "total_updates": total_updates,
+                "rollout_steps": ROLLOUT_STEPS,
+                "eval_episodes": EVAL_EPISODES,
+                "seed": seed,
+                "device": str(device),
+                "curriculum": True,
             },
         )
 
         # ── State ─────────────────────────────────────────────────────────────
-        self.update  = 0
+        self.update = 0
         self.episode = 0
-        self._win_buffer: dict[str, list[float]] = {
-            "blue": [], "red": [], "draw": []
-        }
+        self._win_buffer: dict[str, list[float]] = {"blue": [], "red": [], "draw": []}
 
     # ── Main training loop ────────────────────────────────────────────────────
 
@@ -138,11 +131,11 @@ class SelfPlayTrainer:
         print(f"\nStarting training on {self.device} | {self.total_updates} updates\n")
 
         obs, info = self.env.reset(seed=self.seed)
-        t_start   = time.time()
+        t_start = time.time()
 
         # Initial checkpoints
         self.pool_blue.save_checkpoint(self.agent_blue, update_step=0)
-        self.pool_red.save_checkpoint(self.agent_red,   update_step=0)
+        self.pool_red.save_checkpoint(self.agent_red, update_step=0)
         self._refresh_opponents()
 
         while self.update < self.total_updates:
@@ -150,7 +143,7 @@ class SelfPlayTrainer:
 
             for agent, name in (
                 (self.agent_blue, "blue"),
-                (self.agent_red,  "red"),
+                (self.agent_red, "red"),
             ):
                 if not agent.buffer.is_full:
                     continue
@@ -172,20 +165,16 @@ class SelfPlayTrainer:
                 # Save checkpoint
                 if self.update % SAVE_EVERY == 0:
                     if name == "blue":
-                        self.pool_blue.save_checkpoint(
-                            self.agent_blue, self.update
-                        )
+                        self.pool_blue.save_checkpoint(self.agent_blue, self.update)
                     else:
-                        self.pool_red.save_checkpoint(
-                            self.agent_red, self.update
-                        )
+                        self.pool_red.save_checkpoint(self.agent_red, self.update)
 
                 # Evaluation
                 if self.update % EVAL_EVERY == 0:
                     win_rates = self._evaluate()
                     self._log_elo()
                     elapsed = time.time() - t_start
-                    phase   = self.curriculum.phase(self.update)
+                    phase = self.curriculum.phase(self.update)
                     print(
                         f"Update {self.update:5d}/{self.total_updates} | "
                         f"Phase {phase} | "
@@ -200,41 +189,58 @@ class SelfPlayTrainer:
 
     # ── Rollout collection ────────────────────────────────────────────────────
 
-    def _collect_rollout(
-        self, obs: np.ndarray, info: dict
-    ) -> tuple[np.ndarray, dict]:
-        """
-        One environment step. The active team determines which agent acts.
-        If that agent's matchup is "vs_bot", the opponent acts via heuristic.
-        """
+    def _collect_rollout(self, obs: np.ndarray, info: dict) -> tuple[np.ndarray, dict]:
         active_team = self.env._grid.active_team
-        mask        = info["action_mask"]
+        mask = info["action_mask"]
 
         if active_team == Team.BLUE:
-            acting_agent = self.agent_blue
-            matchup      = self._matchup_blue
+            ppo_agent = self.agent_blue
+            opponent_bot = self.bot_red
+            is_vs_bot = self._matchup_blue == "vs_bot"
         else:
-            acting_agent = self.agent_red
-            matchup      = self._matchup_red
+            ppo_agent = self.agent_red
+            opponent_bot = self.bot_blue
+            is_vs_bot = self._matchup_red == "vs_bot"
 
-        action, log_prob, value = acting_agent.select_action(obs, mask)
+        action, log_prob, value = ppo_agent.select_action(obs, mask)
         obs_next, reward, terminated, truncated, info_next = self.env.step(action)
 
-        acting_agent.buffer.add(
-            obs      = torch.tensor(obs,      dtype=torch.float32),
-            obs_next = torch.tensor(obs_next, dtype=torch.float32),
-            action   = torch.tensor(action,   dtype=torch.long),
-            log_prob = log_prob.detach().cpu(),
-            reward   = float(reward),
-            value    = value.detach().cpu(),
-            done     = terminated or truncated,
-            mask     = torch.tensor(mask, dtype=torch.int8),
+        ppo_agent.buffer.add(
+            obs=torch.tensor(obs, dtype=torch.float32),
+            obs_next=torch.tensor(obs_next, dtype=torch.float32),
+            action=torch.tensor(action, dtype=torch.long),
+            log_prob=log_prob.detach().cpu(),
+            reward=float(reward),
+            value=value.detach().cpu(),
+            done=terminated or truncated,
+            mask=torch.tensor(mask, dtype=torch.int8),
         )
 
         if terminated or truncated:
             self.episode += 1
             self._record_episode_result(info_next.get("winner"))
             obs_next, info_next = self.env.reset()
+            return obs_next, info_next
+
+        next_team = self.env._grid.active_team
+
+        if next_team != active_team:
+            next_mask = info_next["action_mask"]
+
+            if is_vs_bot:
+                bot_action = opponent_bot.select_action(
+                    obs_next, next_mask, self.env._grid
+                )
+            else:
+                opp = self.opp_red if next_team == Team.RED else self.opp_blue
+                bot_action, _, _ = opp.select_action(obs_next, next_mask)
+
+            obs_next, _, terminated, truncated, info_next = self.env.step(bot_action)
+
+            if terminated or truncated:
+                self.episode += 1
+                self._record_episode_result(info_next.get("winner"))
+                obs_next, info_next = self.env.reset()
 
         return obs_next, info_next
 
@@ -268,21 +274,17 @@ class SelfPlayTrainer:
 
     def _evaluate(self) -> dict[str, float]:
         """Runs EVAL_EPISODES between agent_blue and agent_red."""
-        results  = {"blue": 0, "red": 0, "draw": 0}
+        results = {"blue": 0, "red": 0, "draw": 0}
         eval_env = TactilAIEnv(team=Team.BLUE, seed=self.seed)
 
         for ep in range(EVAL_EPISODES):
             obs, info = eval_env.reset(seed=ep)
-            done      = False
+            done = False
 
             while not done:
                 active_team = eval_env._grid.active_team
-                mask        = info["action_mask"]
-                agent = (
-                    self.agent_blue
-                    if active_team == Team.BLUE
-                    else self.agent_red
-                )
+                mask = info["action_mask"]
+                agent = self.agent_blue if active_team == Team.BLUE else self.agent_red
                 action, _, _ = agent.select_action(obs, mask)
                 obs, _, terminated, truncated, info = eval_env.step(action)
                 done = terminated or truncated
@@ -300,13 +302,16 @@ class SelfPlayTrainer:
 
         eval_env.close()
 
-        total     = EVAL_EPISODES
+        total = EVAL_EPISODES
         win_rates = {k: v / total for k, v in results.items()}
-        wandb.log({
-            "eval/win_rate_blue": win_rates["blue"],
-            "eval/win_rate_red":  win_rates["red"],
-            "eval/draw_rate":     win_rates["draw"],
-        }, step=self.update)
+        wandb.log(
+            {
+                "eval/win_rate_blue": win_rates["blue"],
+                "eval/win_rate_red": win_rates["red"],
+                "eval/draw_rate": win_rates["draw"],
+            },
+            step=self.update,
+        )
 
         return win_rates
 
@@ -314,8 +319,8 @@ class SelfPlayTrainer:
 
     def _record_episode_result(self, winner: str | None) -> None:
         self._win_buffer["blue"].append(1.0 if winner == "BLUE" else 0.0)
-        self._win_buffer["red"].append( 1.0 if winner == "RED"  else 0.0)
-        self._win_buffer["draw"].append(1.0 if winner is None   else 0.0)
+        self._win_buffer["red"].append(1.0 if winner == "RED" else 0.0)
+        self._win_buffer["draw"].append(1.0 if winner is None else 0.0)
         for k in self._win_buffer:
             if len(self._win_buffer[k]) > 100:
                 self._win_buffer[k].pop(0)
@@ -331,15 +336,21 @@ class SelfPlayTrainer:
         wandb.log(log_data, step=step)
 
     def _log_elo(self) -> None:
-        wandb.log({
-            "elo/blue": self.elo.rating("agent_blue"),
-            "elo/red":  self.elo.rating("agent_red"),
-        }, step=self.update)
+        wandb.log(
+            {
+                "elo/blue": self.elo.rating("agent_blue"),
+                "elo/red": self.elo.rating("agent_red"),
+            },
+            step=self.update,
+        )
 
     def _log_curriculum(self) -> None:
-        wandb.log({
-            "curriculum/phase":    self.curriculum.phase(self.update),
-            "curriculum/bot_prob": self.curriculum.bot_probability(self.update),
-            "curriculum/matchup_blue": 1 if self._matchup_blue == "vs_bot" else 0,
-            "curriculum/matchup_red":  1 if self._matchup_red  == "vs_bot" else 0,
-        }, step=self.update)
+        wandb.log(
+            {
+                "curriculum/phase": self.curriculum.phase(self.update),
+                "curriculum/bot_prob": self.curriculum.bot_probability(self.update),
+                "curriculum/matchup_blue": 1 if self._matchup_blue == "vs_bot" else 0,
+                "curriculum/matchup_red": 1 if self._matchup_red == "vs_bot" else 0,
+            },
+            step=self.update,
+        )
